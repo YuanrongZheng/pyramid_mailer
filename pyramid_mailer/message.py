@@ -43,7 +43,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.encoders import _bencode
 
-from email.charset import Charset
+from email.charset import Charset, CODEC_MAP
 
 from .exceptions import (
     BadHeaders,
@@ -478,6 +478,7 @@ def to_message(base):
             # than the input encoding for a limited set of encodings
             # (e.g. Shift_JIS and EUC-JP)
             charset_obj.output_charset = charset_obj.input_charset
+            charset_obj.output_codec = CODEC_MAP.get(charset_obj.input_charset, charset_obj.input_charset)
         else:
             charset_obj = None
         out.set_payload(body, charset_obj)
