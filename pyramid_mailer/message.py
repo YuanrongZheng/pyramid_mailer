@@ -43,6 +43,8 @@ from email.mime.multipart import MIMEMultipart
 
 from email.encoders import _bencode
 
+from email.charset import Charset
+
 from .exceptions import (
     BadHeaders,
     InvalidMessage,
@@ -469,7 +471,16 @@ def to_message(base):
                 body = transfer_encode(ctenc, body)
             if not PY2: # pragma: no cover
                 body = body.decode(charset or 'ascii', 'replace')
-        out.set_payload(body, charset) 
+        if charset is not None:
+            charset_obj = Charset(charset)
+            # XXX to circumvent the wrong behavior of email module
+            # that it sets the different encoding to the output encoding 
+            # than the input encoding for a limited set of encodings
+            # (e.g. Shift_JIS and EUC-JP)
+            charset_obj.output_charset = charset_obj.input_charset
+        else:
+            charset_obj = None
+        out.set_payload(body, charset_obj)
 
     for k in base.keys(): # returned sorted
         value = base[k]
