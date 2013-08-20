@@ -37,6 +37,7 @@ import cgi
 import mimetypes
 import os
 import string
+import re
 
 from email.mime.nonmultipart import MIMENonMultipart
 from email.mime.multipart import MIMEMultipart
@@ -44,6 +45,8 @@ from email.mime.multipart import MIMEMultipart
 from email.encoders import _bencode
 
 from email.charset import Charset
+
+from email.header import Header
 
 from .exceptions import (
     BadHeaders,
@@ -424,6 +427,100 @@ class MailBase(object):
     def attach_part(self, part):
         self.parts.append(part)
 
+def make_charset_obj(charset):
+    charset_obj = Charset(charset)
+    # XXX to circumvent the wrong behavior of email module
+    # that it sets the different encoding to the output encoding 
+    # than the input encoding for a limited set of encodings
+    # (e.g. Shift_JIS and EUC-JP)
+    charset_obj.output_charset = charset_obj.input_charset
+    return charset_obj
+
+
+
+class HeaderChunker(object):
+    regexp = re.compile(r"(?P<ws>\s+)|(?P<qs>\"(?:[^\s\\\"]|\\[^\s])*\")|(?P<delim>[<>:;,()])|(?P<word>[^<>:;,()\s\"\\]+)")
+
+    def __init__(self, header, charset):
+        self.header = header
+        self.charset = charset
+        self.last_chunk = None
+        self.last_chunk_has_ws_tail = False
+
+    def _flush_chunk(self):
+        if self.last_chunk is not None:
+            if self.last_chunk_has_ws_tail:
+                self.last_chunk = (self.last_chunk[0][0:-1], self.last_chunk[1])
+            self.header.append(*self.last_chunk)
+            self.last_chunk = None
+            self.last_chunk_has_ws_tail = False
+
+    def _handle_ws(self, ws):
+        if self.last_chunk is None:
+            self.header.append(ws, None)
+        else:
+            self.last_chunk = (self.last_chunk[0] + ws, self.last_chunk[1])
+            self.last_chunk_has_ws_tail = True
+
+    def _handle_qs(self, qs):
+        self._flush_chunk()
+        header.append(qs, None)
+
+    def _handle_delim(self, delim):
+        if self.last_chunk is not None:
+            if self.last_chunk[1] is None:
+                self.last_chunk = (self.last_chunk[0] + delim, self.last_chunk[1])
+            else:
+                self._flush_chunk()
+                self.last_chunk = (delim, None)
+        else:
+            self.last_chunk = (delim, None)
+        self.last_chunk_has_ws_tail = False
+
+    def _handle_word(self, word):
+        _charset, _ = best_charset(word)
+        if _charset == 'us-ascii':
+            if self.last_chunk is not None:
+                self.last_chunk = (self.last_chunk[0] + word, self.last_chunk[1])
+            else:
+                self.last_chunk = (word, None)
+        else:
+            if self.last_chunk is not None:
+                if self.last_chunk[1] == self.charset:
+                    self.last_chunk = (self.last_chunk[0] + word, self.last_chunk[1])
+                else:
+                    self._flush_chunk()
+                    self.last_chunk = (word, self.charset)
+            else:
+                self.last_chunk = (word, self.charset)
+        self.last_chunk_has_ws_tail = False
+    
+    def __call__(self, value):
+        for g in re.finditer(self.regexp, value):
+            ws = g.group('ws')
+            qs = g.group('qs')
+            delim = g.group('delim')
+            word = g.group('word')
+
+            if ws:
+                self._handle_ws(ws)
+            elif qs:
+                self._handle_qs(qs)
+            elif delim:
+                self._handle_delim(delim)
+            else:
+                self._handle_word(word)
+        self._flush_chunk()
+
+def compose_header(value, charset):
+    # XXX this is not fully RFC2045 / RFC5322 compliant, but works in most
+    # cases (I bet you'll never want to interleave comments among the
+    # phrases)
+
+    header = Header()
+    HeaderChunker(header, charset)(value) 
+    return header
+
 def to_message(base):
     """
     Given a MailBase, this will construct a MIME part that is canonicalized for
@@ -449,9 +546,12 @@ def to_message(base):
     body = base.get_body()
     ctenc = base.get_transfer_encoding()
     charset = ctparams.get('charset')
+    charset_obj = None
 
     if is_multipart:
         out = MIMEMultipart(subtype, **ctparams)
+        if charset is not None:
+            charset_obj = make_charset_obj(charset)
     else:
         out = MIMENonMultipart(maintype, subtype, **ctparams)
         if ctenc:
@@ -459,7 +559,7 @@ def to_message(base):
         if isinstance(body, text_type):
             if not charset:
                 if is_text:
-                    charset, _ = best_charset(body)
+                    charset, _ = best_charset(body + ''.join(base[header_name] for header_name in base))
                 else:
                     charset = 'utf-8'
             if PY2:
@@ -472,21 +572,17 @@ def to_message(base):
             if not PY2: # pragma: no cover
                 body = body.decode(charset or 'ascii', 'replace')
         if charset is not None:
-            charset_obj = Charset(charset)
-            # XXX to circumvent the wrong behavior of email module
-            # that it sets the different encoding to the output encoding 
-            # than the input encoding for a limited set of encodings
-            # (e.g. Shift_JIS and EUC-JP)
-            charset_obj.output_charset = charset_obj.input_charset
-        else:
-            charset_obj = None
+            charset_obj = make_charset_obj(charset)
         out.set_payload(body, charset_obj)
 
     for k in base.keys(): # returned sorted
         value = base[k]
         if not value:
             continue
-        out[k] = value
+        if charset_obj: 
+            out[k] = compose_header(value, charset=charset_obj)
+        else:
+            out[k] = value
 
     cdisp, cdisp_params = base.get_content_disposition()
 
