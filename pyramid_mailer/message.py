@@ -451,13 +451,15 @@ def to_message(base):
     if is_multipart:
         out = MIMEMultipart(subtype, **ctparams)
     else:
+        out = MIMENonMultipart(maintype, subtype, **ctparams)
+        if ctenc:
+            out['Content-Transfer-Encoding'] = ctenc
         if isinstance(body, text_type):
             if not charset:
                 if is_text:
                     charset, _ = best_charset(body)
                 else:
                     charset = 'utf-8'
-                ctparams['charset'] = charset
             if PY2:
                 body = body.encode(charset)
             else: # pragma: no cover
@@ -467,10 +469,7 @@ def to_message(base):
                 body = transfer_encode(ctenc, body)
             if not PY2: # pragma: no cover
                 body = body.decode(charset or 'ascii', 'replace')
-        out = MIMENonMultipart(maintype, subtype, **ctparams)
-        if ctenc:
-            out['Content-Transfer-Encoding'] = ctenc
-        out.set_payload(body)
+        out.set_payload(body, charset) 
 
     for k in base.keys(): # returned sorted
         value = base[k]
