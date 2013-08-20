@@ -1037,7 +1037,60 @@ class Test_to_message(unittest.TestCase):
         self.assertEqual(result['Content-Transfer-Encoding'], 'base64')
         payload = result.get_payload()
         self.assertEqual(payload, _bencode(b'foo').decode('ascii'))
-        
+
+    def test_header_encoding_header_latin1_payload_ascii(self):
+        from email.header import Header
+
+        mail = self._makeBase()
+        mail.set_content_type('text/plain; charset=iso-8859-1')
+        mail['Subject'] = b'LaPe\xf1a <test@example.com>'.decode('iso-8859-1')
+        mail.set_body(b'foo'.decode('ascii'))
+        result = self._callFUT(mail)
+        self.assertIsInstance(result['Subject'], Header)
+        self.assertEqual(result['Content-Type'].encode(), b'text/plain; charset="iso-8859-1"')
+        self.assertEqual(result['Subject'].encode(), '=?iso-8859-1?q?LaPe=F1a?= <test@example.com>')
+
+    def test_header_encoding_header_ascii_payload_latin1(self):
+        from email.header import Header
+
+        mail = self._makeBase()
+        mail.set_content_type('text/plain; charset=iso-8859-1')
+        mail['Subject'] = b'foo <test@example.com>'.decode('ascii')
+        mail.set_body(b'LaPe\xf1a'.decode('iso-8859-1'))
+        result = self._callFUT(mail)
+        self.assertIsInstance(result['Subject'], Header)
+        self.assertEqual(result['Content-Type'].encode(), b'text/plain; charset="iso-8859-1"')
+        self.assertEqual(result['Subject'].encode(), 'foo <test@example.com>')
+        self.assertEqual(result['Content-Transfer-Encoding'], 'quoted-printable')
+        self.assertEqual(result.get_payload(), b'LaPe=F1a'.decode('iso-8859-1'))
+
+    def test_header_encoding_header_ascii_payload_latin1(self):
+        from email.header import Header
+
+        mail = self._makeBase()
+        mail.set_content_type('text/plain; charset=iso-8859-1')
+        mail['Subject'] = b'foo <test@example.com>'.decode('ascii')
+        mail.set_body(b'LaPe\xf1a'.decode('iso-8859-1'))
+        result = self._callFUT(mail)
+        self.assertIsInstance(result['Subject'], Header)
+        self.assertEqual(result['Subject'].encode(), 'foo <test@example.com>')
+        self.assertEqual(result['Content-Transfer-Encoding'], 'quoted-printable')
+        self.assertEqual(result.get_payload(), b'LaPe=F1a'.decode('iso-8859-1'))
+
+    def test_header_encoding_header_payload_iso_2022_jp(self):
+        from email.header import Header
+
+        mail = self._makeBase()
+        mail.set_content_type('text/plain', {'charset': 'iso-2022-jp'})
+        mail['Subject'] = u'\u30c6\u30b9\u30c8  <test@example.com>'
+        mail.set_body(b'LaPena')
+
+        result = self._callFUT(mail)
+        self.assertEqual(result['Content-Type'], 'text/plain; charset="iso-2022-jp"')
+        self.assertIsInstance(result['Subject'], Header)
+        self.assertEqual(result['Subject'].encode(), '=?iso-2022-jp?b?GyRCJUYlOSVIGyhCIA==?= <test@example.com>')
+        self.assertEqual(result.get_payload(), b'LaPena'.decode('ascii'))
+
     def test_recursion(self):
         mail = self._makeBase()
         another = self._makeBase()
