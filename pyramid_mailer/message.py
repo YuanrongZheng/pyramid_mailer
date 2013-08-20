@@ -44,7 +44,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.encoders import _bencode
 
-from email.charset import Charset
+from email.charset import Charset, CODEC_MAP
 
 from email.header import Header
 
@@ -434,6 +434,7 @@ def make_charset_obj(charset):
     # than the input encoding for a limited set of encodings
     # (e.g. Shift_JIS and EUC-JP)
     charset_obj.output_charset = charset_obj.input_charset
+    charset_obj.output_codec = CODEC_MAP.get(charset_obj.input_charset, charset_obj.input_charset)
     return charset_obj
 
 
