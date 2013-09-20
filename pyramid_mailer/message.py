@@ -465,7 +465,7 @@ class HeaderChunker(object):
 
     def _handle_qs(self, qs):
         self._flush_chunk()
-        header.append(qs, None)
+        self.header.append(qs, None)
 
     def _handle_delim(self, delim):
         if self.last_chunk is not None:

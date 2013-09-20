@@ -1226,3 +1226,22 @@ class TestFunctional(unittest.TestCase):
             except:
                 pass
 
+class TestHeaderChunker(unittest.TestCase):
+    def _makeOne(self, *args, **kwargs):
+        from ..message import HeaderChunker
+        return HeaderChunker(*args, **kwargs)
+
+    def test_qs(self):
+        from email.header import Header
+        result = Header()
+        target = self._makeOne(result, 'utf-8')
+        target('"test"')
+        self.assertEqual(result.encode(), '"test"')
+
+    def test_combined(self):
+        from email.header import Header
+        result = Header()
+        target = self._makeOne(result, 'iso-8859-1')
+        target(u'F\u00f8\u00f8 <foo@example.com>')
+        self.assertEqual(result.encode(), '=?iso-8859-1?q?F=F8=F8?= <foo@example.com>')
+
