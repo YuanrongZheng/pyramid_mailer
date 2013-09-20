@@ -45,7 +45,7 @@ testing_extras = tests_require + [
 
 setup(
     name='pyramid_mailer',
-    version='0.13moriyoshi4',
+    version='0.13moriyoshi5',
     license='BSD',
     author='Dan Jacob',
     author_email='danjac354@gmail.com',
